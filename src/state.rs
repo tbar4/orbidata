@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::ingest::spacetrack::SpaceTrackClient;
 use crate::models::orbital_element::OrbitalElement;
 use moka::future::Cache;
 use reqwest::Client;
@@ -12,6 +13,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub http_client: Client,
     pub tle_cache: Cache<String, Arc<Vec<OrbitalElement>>>,
+    pub spacetrack: Option<Arc<SpaceTrackClient>>,
 }
 
 impl AppState {
@@ -27,10 +29,32 @@ impl AppState {
             .time_to_live(Duration::from_secs(config.tle_cache_ttl_secs))
             .build();
 
+        let spacetrack =
+            if config.spacetrack_username.is_some() && config.spacetrack_password.is_some() {
+                let username = config.spacetrack_username.clone().unwrap();
+                let password = config.spacetrack_password.clone().unwrap();
+                match SpaceTrackClient::new(username, password) {
+                    Ok(client) => {
+                        tracing::info!("Space-Track client initialized");
+                        Some(Arc::new(client))
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize Space-Track client: {}", e);
+                        None
+                    }
+                }
+            } else {
+                tracing::info!(
+                    "No Space-Track credentials configured — /v1/conjunctions/live will return 503"
+                );
+                None
+            };
+
         Self {
             config: Arc::new(config),
             http_client,
             tle_cache,
+            spacetrack,
         }
     }
 

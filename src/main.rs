@@ -47,6 +47,10 @@ async fn main() {
             "/v1/conjunctions",
             get(api::conjunctions::list_conjunctions),
         )
+        .route(
+            "/v1/conjunctions/live",
+            get(api::conjunctions::list_conjunctions_live),
+        )
         .layer(cors)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())

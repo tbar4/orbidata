@@ -19,6 +19,9 @@ pub enum AppError {
 
     #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
+
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl IntoResponse for AppError {
@@ -28,6 +31,7 @@ impl IntoResponse for AppError {
             AppError::Upstream(e) => (StatusCode::BAD_GATEWAY, e.to_string()),
             AppError::Serialization(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
             AppError::Internal(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            AppError::Unavailable(msg) => (StatusCode::SERVICE_UNAVAILABLE, msg.clone()),
         };
 
         let body = Json(json!({

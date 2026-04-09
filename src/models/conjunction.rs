@@ -27,6 +27,36 @@ pub enum ConjunctionSource {
     Sample,
 }
 
+impl ConjunctionRecord {
+    pub fn from_spacetrack(raw: crate::ingest::spacetrack::SpaceTrackCdm) -> Self {
+        Self {
+            cdm_id: raw.cdm_id,
+            created: raw.created.unwrap_or_default(),
+            emergency_reportable: raw.emergency_reportable,
+            tca: raw.tca.unwrap_or_default(),
+            miss_distance_m: raw
+                .min_rng
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0),
+            probability_of_collision: raw.pc.and_then(|s| s.parse::<f64>().ok()),
+            sat1_id: raw
+                .sat_1_id
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0),
+            sat1_name: raw.sat_1_name.unwrap_or_default(),
+            sat2_id: raw
+                .sat_2_id
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0),
+            sat2_name: raw.sat_2_name.unwrap_or_default(),
+            sat1_object_type: raw.sat_1_object_type,
+            sat2_object_type: raw.sat_2_object_type,
+            collision_percentile: raw.collision_percentile.and_then(|s| s.parse::<f64>().ok()),
+            source: ConjunctionSource::SpaceTrack,
+        }
+    }
+}
+
 /// Sample CDMs used when Space-Track credentials are not configured.
 pub fn sample_conjunctions() -> Vec<ConjunctionRecord> {
     vec![

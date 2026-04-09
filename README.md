@@ -26,6 +26,7 @@ Each source has different schemas, rate limits, and auth models. Operators, insu
 | GET    | `/v1/tle`             | List active satellites (paginated) |
 | GET    | `/v1/tle/{norad_id}`  | Get single satellite by NORAD ID   |
 | GET    | `/v1/conjunctions`    | List conjunction events (CDMs)     |
+| GET    | `/v1/conjunctions/live` | Live CDMs from Space-Track (requires credentials) |
 
 ## Quick Start
 
@@ -144,6 +145,33 @@ To enable live Conjunction Data Messages from Space-Track:
 
 Without credentials, the API returns well-structured sample data that mirrors the exact CDM schema, so you can develop and test integrations immediately.
 
+## Live CDM Endpoint
+
+The `/v1/conjunctions/live` endpoint fetches real-time Conjunction Data Messages directly from [Space-Track.org](https://www.space-track.org).
+
+### Authentication flow
+
+1. On first request (or after session expiry), orbidata authenticates via `POST /ajaxauth/login`
+2. Session cookies are stored in-process and reused for up to 90 minutes
+3. On 401/403 responses, the session is invalidated and re-authentication occurs automatically
+
+### Rate limit handling
+
+Space-Track allows 30 requests per minute per account. orbidata tracks requests in a 60-second sliding window:
+
+- At 28+ requests in a window, a warning is logged
+- On HTTP 429, the client enters a 60-second backoff and returns a 503 with `retry_after` context
+- The `/v1/conjunctions` (sample) endpoint is always available as a fallback during backoff
+
+### Response comparison
+
+| Endpoint | Source | Auth Required | Schema |
+|----------|--------|---------------|--------|
+| `/v1/conjunctions` | Sample data | No | CCSDS-aligned |
+| `/v1/conjunctions/live` | Space-Track real-time | Yes (SPACETRACK_*) | CCSDS-aligned |
+
+Both endpoints return identical JSON schemas — `source` field will be `"sample"` or `"space-track"`.
+
 ## Architecture
 
 ```
@@ -178,7 +206,7 @@ All configuration can be set via environment variables or CLI flags. The server 
 
 - [ ] Space weather integration (NOAA SWPC)
 - [ ] Orbit propagation via SGP4/SDP4 (satellite position at T+n minutes)
-- [ ] Space-Track CDM live pull (full authentication + query)
+- [x] Space-Track CDM live pull (full authentication + query)
 - [ ] Rate limiting and API key authentication
 - [ ] OpenAPI / Swagger documentation
 - [ ] Docker image and Helm chart
