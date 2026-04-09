@@ -11,40 +11,40 @@ use orbidata::config::Config;
 use orbidata::ingest::spacetrack::SpaceTrackClient;
 use orbidata::state::AppState;
 
-fn fake_tle_json() -> Value {
+fn fake_gp_history_json() -> Value {
     serde_json::json!([{
         "CCSDS_OMM_VERS": "2.0",
         "COMMENT": "GENERATED VIA SPACE-TRACK.ORG API",
         "CLASSIFICATION_TYPE": "U",
-        "NORAD_CAT_ID": "25544",
+        "NORAD_CAT_ID": 25544,
         "OBJECT_NAME": "ISS (ZARYA)",
         "OBJECT_ID": "1998-067A",
         "EPOCH": "2026-04-01T12:00:00.000000",
-        "MEAN_MOTION": "15.48919799",
-        "ECCENTRICITY": ".0001234",
-        "INCLINATION": "51.6416",
-        "RA_OF_ASC_NODE": "123.4567",
-        "ARG_OF_PERICENTER": "45.6789",
-        "MEAN_ANOMALY": "314.1592",
-        "EPHEMERIS_TYPE": "0",
-        "ELEMENT_SET_NO": "999",
-        "REV_AT_EPOCH": "45678",
-        "BSTAR": ".12345E-4",
-        "MEAN_MOTION_DOT": ".123456E-4",
-        "MEAN_MOTION_DDOT": "0",
-        "SEMIMAJOR_AXIS": "6793.234",
-        "PERIOD": "92.726",
-        "APOAPSIS": "422.234",
-        "PERIAPSIS": "408.234",
+        "MEAN_MOTION": 15.48919799,
+        "ECCENTRICITY": 0.0001234,
+        "INCLINATION": 51.6416,
+        "RA_OF_ASC_NODE": 123.4567,
+        "ARG_OF_PERICENTER": 45.6789,
+        "MEAN_ANOMALY": 314.1592,
+        "EPHEMERIS_TYPE": 0,
+        "ELEMENT_SET_NO": 999,
+        "REV_AT_EPOCH": 45678,
+        "BSTAR": 0.000012345,
+        "MEAN_MOTION_DOT": 0.0000123456,
+        "MEAN_MOTION_DDOT": 0.0,
+        "SEMIMAJOR_AXIS": 6793.234,
+        "PERIOD": 92.726,
+        "APOAPSIS": 422.234,
+        "PERIAPSIS": 408.234,
         "OBJECT_TYPE": "PAYLOAD",
         "RCS_SIZE": "LARGE",
         "COUNTRY_CODE": "ISS",
         "LAUNCH_DATE": "1998-11-20",
         "SITE": "TTMTR",
         "DECAY_DATE": null,
-        "DECAYED": "0",
-        "FILE": "3456789",
-        "GP_ID": "234567890",
+        "DECAYED": 0,
+        "FILE": 3456789,
+        "GP_ID": 234567890,
         "TLE_LINE0": "0 ISS (ZARYA)",
         "TLE_LINE1": "1 25544U 98067A   26091.50000000  .00001234  00000+0  12345-4 0  9999",
         "TLE_LINE2": "2 25544  51.6416 123.4567 0001234  45.6789 314.1592 15.48919799456789"
@@ -103,13 +103,13 @@ async fn test_tle_history_returns_orbital_elements() {
         .mount(&mock_server)
         .await;
 
-    // Stub: GET TLE class query for NORAD 25544
+    // Stub: GET gp_history class query for NORAD 25544
     // Space-Track uses spaces in URL paths (e.g., "EPOCH desc") which reqwest encodes as %20
     Mock::given(method("GET"))
         .and(path(
-            "/basicspacedata/query/class/tle/NORAD_CAT_ID/25544/orderby/EPOCH%20desc/limit/30/format/json",
+            "/basicspacedata/query/class/gp_history/NORAD_CAT_ID/25544/orderby/EPOCH%20desc/limit/30/format/json",
         ))
-        .respond_with(ResponseTemplate::new(200).set_body_json(&fake_tle_json()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&fake_gp_history_json()))
         .expect(1)
         .mount(&mock_server)
         .await;
@@ -158,7 +158,7 @@ async fn test_tle_history_returns_orbital_elements() {
     assert_eq!(elements["raan_deg"], 123.4567);
     assert_eq!(elements["arg_of_pericenter_deg"], 45.6789);
     assert_eq!(elements["mean_anomaly_deg"], 314.1592);
-    assert_eq!(elements["bstar"], 0.12345e-4);
+    assert_eq!(elements["bstar"], 0.000012345);
     assert_eq!(elements["period_min"], 92.726);
     assert_eq!(elements["apoapsis_km"], 422.234);
     assert_eq!(elements["periapsis_km"], 408.234);

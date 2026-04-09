@@ -6,6 +6,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use crate::models::orbital_element::CelesTrakGp;
+
 const BASE_URL: &str = "https://www.space-track.org";
 const CDM_QUERY: &str =
     "/basicspacedata/query/class/cdm_public/orderby/TCA%20asc/limit/20/format/json";
@@ -369,7 +371,7 @@ impl SpaceTrackClient {
         }
     }
 
-    /// Fetch historical TLE epochs from the Space-Track `tle` class for a given NORAD ID.
+    /// Fetch historical OMM epochs from the Space-Track `gp_history` class for a given NORAD ID.
     /// If start/end dates are provided (YYYY-MM-DD), filters to that range.
     /// Otherwise returns the most recent `limit` epochs ordered newest-first.
     pub async fn fetch_tle_history(
@@ -378,7 +380,7 @@ impl SpaceTrackClient {
         limit: u32,
         start: Option<&str>,
         end: Option<&str>,
-    ) -> Result<Vec<SpaceTrackTleRecord>, anyhow::Error> {
+    ) -> Result<Vec<CelesTrakGp>, anyhow::Error> {
         // Check backoff
         {
             let session = self.session.read().await;
@@ -416,36 +418,37 @@ impl SpaceTrackClient {
 
         let url = match (start, end) {
             (Some(s), Some(e)) => format!(
-                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH%20asc/limit/{}/format/json",
+                "{}/basicspacedata/query/class/gp_history/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH%20asc/limit/{}/format/json",
                 self.base_url, norad_id, s, e, limit
             ),
             _ => format!(
-                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/orderby/EPOCH%20desc/limit/{}/format/json",
+                "{}/basicspacedata/query/class/gp_history/NORAD_CAT_ID/{}/orderby/EPOCH%20desc/limit/{}/format/json",
                 self.base_url, norad_id, limit
             ),
         };
 
-        tracing::debug!(url = %url, "Space-Track TLE history request URL");
-        info!(
-            norad_id,
-            limit, "Fetching TLE history from Space-Track tle class"
-        );
+        info!(url = %url, norad_id, limit, "Requesting Space-Track gp_history");
 
         let resp = self
             .http
             .get(&url)
             .send()
             .await
-            .context("Space-Track tle history request failed")?;
+            .context("Space-Track gp_history request failed")?;
 
-        match resp.status() {
+        let status = resp.status();
+        info!(status = %status, norad_id, "Space-Track gp_history response status");
+
+        match status {
             StatusCode::OK => {
                 let body = resp
                     .text()
                     .await
-                    .context("Failed to read Space-Track tle class response body")?;
+                    .context("Failed to read Space-Track gp_history response body")?;
 
-                let records: Vec<SpaceTrackTleRecord> =
+                tracing::debug!(chars = body.len(), "Space-Track gp_history raw response");
+
+                let records: Vec<CelesTrakGp> =
                     serde_json::from_str(&body).map_err(|e| {
                         let preview = if body.len() > 300 {
                             &body[..300]
@@ -454,13 +457,13 @@ impl SpaceTrackClient {
                         };
                         tracing::error!(
                             norad_id,
-                            "Space-Track tle class returned unexpected response (not a JSON array). \
+                            "Space-Track gp_history returned unexpected response (not a JSON array). \
                              Parse error: {}. Response preview: {}",
                             e,
                             preview
                         );
                         anyhow::anyhow!(
-                            "Space-Track tle class response is not a JSON array: {}. Preview: {}",
+                            "Space-Track gp_history response is not a JSON array: {}. Preview: {}",
                             e,
                             preview
                         )
@@ -468,7 +471,7 @@ impl SpaceTrackClient {
                 info!(
                     norad_id,
                     count = records.len(),
-                    "Space-Track tle history fetch complete"
+                    "Space-Track gp_history fetch complete"
                 );
                 Ok(records)
             }
@@ -488,10 +491,15 @@ impl SpaceTrackClient {
                     "Space-Track session expired — re-authentication required"
                 ))
             }
-            status => Err(anyhow!(
-                "Space-Track tle class returned unexpected status: {}",
-                status
-            )),
+            other => {
+                let body = resp.text().await.unwrap_or_default();
+                let body_preview = &body[..body.len().min(500)];
+                warn!(status = %other, body_preview = %body_preview, "Space-Track gp_history returned error");
+                Err(anyhow!(
+                    "Space-Track gp_history returned unexpected status: {}",
+                    other
+                ))
+            }
         }
     }
 }

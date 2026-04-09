@@ -57,7 +57,7 @@ pub async fn get_tle(
 }
 
 /// GET /v1/tle/:norad_id/history
-/// Returns historical TLE epochs for a NORAD ID from Space-Track tle class.
+/// Returns historical OMM epochs for a NORAD ID from Space-Track gp_history class.
 /// Requires SPACETRACK_USERNAME and SPACETRACK_PASSWORD.
 pub async fn get_tle_history(
     State(state): State<AppState>,
