@@ -68,8 +68,8 @@ async fn main() {
     // between /{norad_id} and /{norad_id}/history at the same prefix level.
     let tle_router = Router::new()
         .route("/", get(api::tle::list_tles))
-        .route("/{norad_id}", get(api::tle::get_tle))
-        .route("/{norad_id}/history", get(api::tle::get_tle_history));
+        .route("/:norad_id", get(api::tle::get_tle))
+        .route("/:norad_id/history", get(api::tle::get_tle_history));
 
     let app = Router::new()
         .route("/v1/health", get(api::health::health))

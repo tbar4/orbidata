@@ -228,6 +228,7 @@ impl From<SpaceTrackTleRecord> for crate::models::orbital_element::OrbitalElemen
 
 pub struct SpaceTrackClient {
     pub http: Client,
+    pub base_url: String,
     pub username: String,
     pub password: String,
     pub session: Arc<RwLock<SpaceTrackSession>>,
@@ -235,6 +236,14 @@ pub struct SpaceTrackClient {
 
 impl SpaceTrackClient {
     pub fn new(username: String, password: String) -> Result<Self, anyhow::Error> {
+        Self::with_base_url(BASE_URL.to_string(), username, password)
+    }
+
+    pub fn with_base_url(
+        base_url: String,
+        username: String,
+        password: String,
+    ) -> Result<Self, anyhow::Error> {
         let http = Client::builder()
             .use_rustls_tls()
             .cookie_store(true)
@@ -244,6 +253,7 @@ impl SpaceTrackClient {
 
         Ok(Self {
             http,
+            base_url,
             username,
             password,
             session: Arc::new(RwLock::new(SpaceTrackSession::default())),
@@ -259,7 +269,7 @@ impl SpaceTrackClient {
         ];
         let resp = self
             .http
-            .post(format!("{}/ajaxauth/login", BASE_URL))
+            .post(format!("{}/ajaxauth/login", self.base_url))
             .form(&params)
             .send()
             .await
@@ -324,7 +334,7 @@ impl SpaceTrackClient {
             }
         }
 
-        let url = format!("{}{}", BASE_URL, CDM_QUERY);
+        let url = format!("{}{}", self.base_url, CDM_QUERY);
         let resp = self
             .http
             .get(&url)
@@ -407,11 +417,11 @@ impl SpaceTrackClient {
         let url = match (start, end) {
             (Some(s), Some(e)) => format!(
                 "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH asc/limit/{}/format/json",
-                BASE_URL, norad_id, s, e, limit
+                self.base_url, norad_id, s, e, limit
             ),
             _ => format!(
                 "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/orderby/EPOCH desc/limit/{}/format/json",
-                BASE_URL, norad_id, limit
+                self.base_url, norad_id, limit
             ),
         };
 
