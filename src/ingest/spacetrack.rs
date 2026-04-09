@@ -248,4 +248,108 @@ impl SpaceTrackClient {
             status => Err(anyhow!("Space-Track CDM query returned status: {}", status)),
         }
     }
+
+    /// Fetch historical TLE epochs from gp_history for a given NORAD ID.
+    /// If start/end dates are provided (YYYY-MM-DD), filters to that range.
+    /// Otherwise returns the most recent `limit` epochs ordered newest-first.
+    pub async fn fetch_tle_history(
+        &self,
+        norad_id: u32,
+        limit: u32,
+        start: Option<&str>,
+        end: Option<&str>,
+    ) -> Result<Vec<crate::models::orbital_element::CelesTrakGp>, anyhow::Error> {
+        // Check backoff
+        {
+            let session = self.session.read().await;
+            if session.rate_limit.is_backing_off() {
+                let secs = session.rate_limit.backoff_secs_remaining();
+                return Err(anyhow!(
+                    "Rate limit backoff active — retry in {} seconds",
+                    secs
+                ));
+            }
+        }
+
+        // Authenticate if needed
+        {
+            let needs_auth = {
+                let session = self.session.read().await;
+                !session.is_session_valid()
+            };
+            if needs_auth {
+                self.authenticate().await?;
+            }
+        }
+
+        // Record request
+        {
+            let mut session = self.session.write().await;
+            session.rate_limit.record_request();
+            if session.rate_limit.is_near_limit() {
+                warn!(
+                    "Approaching Space-Track rate limit ({} req in window)",
+                    session.rate_limit.request_count
+                );
+            }
+        }
+
+        let url = match (start, end) {
+            (Some(s), Some(e)) => format!(
+                "{}/basicspacedata/query/class/gp_history/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH asc/limit/{}/format/json",
+                BASE_URL, norad_id, s, e, limit
+            ),
+            _ => format!(
+                "{}/basicspacedata/query/class/gp_history/NORAD_CAT_ID/{}/orderby/EPOCH desc/limit/{}/format/json",
+                BASE_URL, norad_id, limit
+            ),
+        };
+
+        info!(
+            norad_id,
+            limit, "Fetching TLE history from Space-Track gp_history"
+        );
+
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .context("Space-Track gp_history request failed")?;
+
+        match resp.status() {
+            StatusCode::OK => {
+                let records: Vec<crate::models::orbital_element::CelesTrakGp> =
+                    resp.json()
+                        .await
+                        .context("Failed to deserialize Space-Track gp_history response")?;
+                info!(
+                    norad_id,
+                    count = records.len(),
+                    "Space-Track gp_history fetch complete"
+                );
+                Ok(records)
+            }
+            StatusCode::TOO_MANY_REQUESTS => {
+                let mut session = self.session.write().await;
+                session.rate_limit.set_backoff();
+                Err(anyhow!(
+                    "Space-Track rate limit exceeded (429) — backing off 60 seconds"
+                ))
+            }
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                {
+                    let mut session = self.session.write().await;
+                    session.authenticated = false;
+                }
+                Err(anyhow!(
+                    "Space-Track session expired — re-authentication required"
+                ))
+            }
+            status => Err(anyhow!(
+                "Space-Track gp_history returned unexpected status: {}",
+                status
+            )),
+        }
+    }
 }

@@ -7,7 +7,10 @@ use serde_json::{json, Value};
 use crate::{
     error::AppError,
     ingest::celestrak::{fetch_active_satellites, fetch_by_norad_id},
-    models::pagination::{PaginatedResponse, PaginationParams},
+    models::{
+        orbital_element::{DateRange, OrbitalElement, TleHistoryParams, TleHistoryResponse},
+        pagination::{PaginatedResponse, PaginationParams},
+    },
     state::AppState,
 };
 
@@ -51,4 +54,74 @@ pub async fn get_tle(
             norad_id
         ))),
     }
+}
+
+/// GET /v1/tle/:norad_id/history
+/// Returns historical TLE epochs for a NORAD ID from Space-Track gp_history.
+/// Requires SPACETRACK_USERNAME and SPACETRACK_PASSWORD.
+pub async fn get_tle_history(
+    State(state): State<AppState>,
+    Path(norad_id): Path<u32>,
+    Query(params): Query<TleHistoryParams>,
+) -> Result<Json<Value>, AppError> {
+    let client = state
+        .spacetrack
+        .as_ref()
+        .ok_or_else(|| {
+            AppError::Unavailable(
+                "Space-Track credentials not configured. Set SPACETRACK_USERNAME and SPACETRACK_PASSWORD to enable TLE history.".to_string(),
+            )
+        })?;
+
+    let limit = params.limit();
+    let start = params.start.as_deref();
+    let end = params.end.as_deref();
+
+    let raw_records = client
+        .fetch_tle_history(norad_id, limit, start, end)
+        .await
+        .map_err(AppError::Internal)?;
+
+    if raw_records.is_empty() {
+        return Err(AppError::NotFound(format!(
+            "No historical TLE epochs found for NORAD ID {}",
+            norad_id
+        )));
+    }
+
+    let epochs: Vec<OrbitalElement> = raw_records.into_iter().map(OrbitalElement::from).collect();
+
+    let total_epochs = epochs.len();
+
+    let date_range = if total_epochs > 0 {
+        let mut min_epoch = epochs[0].epoch.clone();
+        let mut max_epoch = epochs[0].epoch.clone();
+        for e in &epochs {
+            if e.epoch < min_epoch {
+                min_epoch = e.epoch.clone();
+            }
+            if e.epoch > max_epoch {
+                max_epoch = e.epoch.clone();
+            }
+        }
+        Some(DateRange {
+            earliest: min_epoch,
+            latest: max_epoch,
+        })
+    } else {
+        None
+    };
+
+    let response = TleHistoryResponse {
+        norad_id,
+        name: epochs.first().map(|e| e.name.clone()).unwrap_or_default(),
+        total_epochs,
+        date_range,
+        epochs,
+        propagation_note: "Epochs are normalized CCSDS OMM records suitable for SGP4/SDP4 propagation. Feed mean_motion_rev_per_day, eccentricity, inclination_deg, raan_deg, arg_of_pericenter_deg, mean_anomaly_deg, and bstar into your propagator at each epoch.",
+    };
+
+    Ok(Json(
+        serde_json::to_value(response).map_err(AppError::Serialization)?,
+    ))
 }

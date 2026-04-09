@@ -25,6 +25,7 @@ Each source has different schemas, rate limits, and auth models. Operators, insu
 | GET    | `/v1/health`          | Service health check               |
 | GET    | `/v1/tle`             | List active satellites (paginated) |
 | GET    | `/v1/tle/{norad_id}`  | Get single satellite by NORAD ID   |
+| GET    | `/v1/tle/{norad_id}/history` | Historical TLE epochs (Space-Track, requires credentials) |
 | GET    | `/v1/conjunctions`    | List conjunction events (CDMs)     |
 | GET    | `/v1/conjunctions/live` | Live CDMs from Space-Track (requires credentials) |
 
@@ -172,6 +173,74 @@ Space-Track allows 30 requests per minute per account. orbidata tracks requests 
 
 Both endpoints return identical JSON schemas — `source` field will be `"sample"` or `"space-track"`.
 
+## Historical TLE Epochs
+
+The `/v1/tle/{norad_id}/history` endpoint returns historical orbital element sets (TLE epochs) from Space-Track's `gp_history` class — the authoritative archive of every published element set for a given object.
+
+### Use case: orbital propagation over time
+
+Each epoch in the response is a complete, normalized OMM record. Feed the Keplerian elements at each epoch into an SGP4/SDP4 propagator to reconstruct the object's position and velocity at any point in time:
+
+```bash
+# Last 30 epochs for the ISS
+curl "http://localhost:8080/v1/tle/25544/history"
+
+# 30 most recent epochs (default)
+curl "http://localhost:8080/v1/tle/25544/history?limit=30"
+
+# Specific date range (chronological order)
+curl "http://localhost:8080/v1/tle/25544/history?start=2026-01-01&end=2026-04-01&limit=100"
+```
+
+### Query parameters
+
+| Parameter | Default | Max | Description |
+|-----------|---------|-----|-------------|
+| `limit` | 30 | 100 | Number of epochs to return |
+| `start` | — | — | Start date (`YYYY-MM-DD`) — enables chronological ordering |
+| `end` | — | — | End date (`YYYY-MM-DD`) |
+
+When no date range is provided, epochs are ordered **newest-first** (most recent history).
+When a date range is provided, epochs are ordered **oldest-first** (chronological, ideal for propagation loops).
+
+### Response schema
+
+```json
+{
+  "norad_id": 25544,
+  "name": "ISS (ZARYA)",
+  "total_epochs": 30,
+  "date_range": {
+    "earliest": "2026-03-10T04:22:00.000000",
+    "latest": "2026-04-08T12:00:00.000000"
+  },
+  "propagation_note": "Epochs are normalized CCSDS OMM records suitable for SGP4/SDP4 propagation...",
+  "epochs": [
+    {
+      "norad_id": 25544,
+      "name": "ISS (ZARYA)",
+      "epoch": "2026-04-08T12:00:00.000000",
+      "elements": {
+        "mean_motion_rev_per_day": 15.50104,
+        "eccentricity": 0.0006703,
+        "inclination_deg": 51.6416,
+        "raan_deg": 247.4627,
+        "arg_of_pericenter_deg": 130.5360,
+        "mean_anomaly_deg": 325.0288,
+        "bstar": 0.000036771,
+        "semimajor_axis_km": 6797.22,
+        "period_min": 92.89
+      },
+      "tle": { "line1": "...", "line2": "..." }
+    }
+  ]
+}
+```
+
+### Why gp_history vs tle_publish
+
+Space-Track's `gp_history` class returns full CCSDS OMM JSON — all Keplerian elements, drag terms, and metadata in one record per epoch. The `tle_publish` class returns only raw TLE line strings, requiring additional parsing. `gp_history` is the correct choice for API consumers who want structured data for propagation.
+
 ## Architecture
 
 ```
@@ -211,7 +280,7 @@ All configuration can be set via environment variables or CLI flags. The server 
 - [ ] OpenAPI / Swagger documentation
 - [ ] Docker image and Helm chart
 - [ ] WebSocket streaming for real-time conjunction alerts
-- [ ] Historical TLE archive and diff tracking
+- [x] Historical TLE archive (Space-Track gp_history)
 
 ## License
 

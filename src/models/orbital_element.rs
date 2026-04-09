@@ -110,6 +110,40 @@ pub struct SatelliteMetadata {
     pub site: Option<String>,
 }
 
+/// Query parameters for the TLE history endpoint.
+#[derive(Debug, Deserialize)]
+pub struct TleHistoryParams {
+    /// Maximum number of epochs to return (default 30, max 100).
+    pub limit: Option<u32>,
+    /// Start date filter in YYYY-MM-DD format (inclusive).
+    pub start: Option<String>,
+    /// End date filter in YYYY-MM-DD format (inclusive).
+    pub end: Option<String>,
+}
+
+impl TleHistoryParams {
+    pub fn limit(&self) -> u32 {
+        self.limit.unwrap_or(30).clamp(1, 100)
+    }
+}
+
+/// Response wrapper for historical TLE epochs.
+#[derive(Debug, Serialize)]
+pub struct TleHistoryResponse {
+    pub norad_id: u32,
+    pub name: String,
+    pub total_epochs: usize,
+    pub date_range: Option<DateRange>,
+    pub epochs: Vec<OrbitalElement>,
+    pub propagation_note: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DateRange {
+    pub earliest: String,
+    pub latest: String,
+}
+
 impl From<CelesTrakGp> for OrbitalElement {
     fn from(gp: CelesTrakGp) -> Self {
         let tle = match (gp.tle_line1, gp.tle_line2) {

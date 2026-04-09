@@ -43,6 +43,7 @@ async fn main() {
         .route("/v1/health", get(api::health::health))
         .route("/v1/tle", get(api::tle::list_tles))
         .route("/v1/tle/{norad_id}", get(api::tle::get_tle))
+        .route("/v1/tle/{norad_id}/history", get(api::tle::get_tle_history))
         .route(
             "/v1/conjunctions",
             get(api::conjunctions::list_conjunctions),
