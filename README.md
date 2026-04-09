@@ -1,70 +1,46 @@
 # orbidata
 
-**Normalized TLE + CDM orbital data API** — a commercial SDA data pipeline built in Rust.
+**Normalized TLE + CDM orbital data API** — commercial SDA data pipeline in Rust.
 
 [![CI](https://github.com/tbar4/orbidata/actions/workflows/ci.yml/badge.svg)](https://github.com/tbar4/orbidata/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
+[![CCSDS OMM](https://img.shields.io/badge/CCSDS-OMM_v2-005B9E)](https://public.ccsds.org/Pubs/502x0b3e1.pdf)
+[![Space-Track](https://img.shields.io/badge/Space--Track-Integrated-1a3a5c)](https://www.space-track.org)
+[![Endpoints](https://img.shields.io/badge/endpoints-6-20808D)](https://github.com/tbar4/orbidata#endpoints)
+
+| | |
+|---|---|
+| **Data sources** | CelesTrak GP JSON · Space-Track `cdm_public` · Space-Track `gp_history` |
+| **Schema** | CCSDS OMM v2 — field names compatible with SGP4/SDP4 propagators |
+| **Auth** | Cookie session · 60 s rate-limit backoff · auto re-auth on 401/403 |
+| **Stack** | Rust · axum · tokio · moka async cache · reqwest (rustls) |
+
+---
 
 ## Why orbidata
 
-The Space Domain Awareness (SDA) data ecosystem is fragmented:
+The SDA data ecosystem is fragmented by design:
 
-- **TLEs** live on CelesTrak with CCSDS OMM JSON, but require parsing and normalization
-- **CDMs** (Conjunction Data Messages) live on Space-Track behind authentication, with their own schema
-- **Space weather** data sits on NOAA SWPC in yet another format
+- **TLEs** come from CelesTrak in CCSDS OMM JSON — different schema from Space-Track's OMM endpoint
+- **CDMs** live on Space-Track behind form-auth, with string-typed numeric fields and its own schema
+- **Orbital history** is buried in `gp_history`, queryable only via Space-Track's REST DSL
 
-Each source has different schemas, rate limits, and auth models. Operators, insurers, and analytics teams waste engineering cycles building bespoke integrations for each one.
+Every operator, insurer, and analytics team builds the same bespoke integration stack. orbidata absorbs that complexity once — one normalized API, one CCSDS-aligned schema, commercial SLAs.
 
-**orbidata** provides a single normalized REST API that unifies these sources under a consistent CCSDS-aligned JSON schema. Built in Rust for memory safety and performance in safety-critical orbital data pipelines.
+> **The Weather Company for orbital data.** One endpoint, not three portals.
 
-## Endpoints
+---
 
-| Method | Path                  | Description                        |
-|--------|-----------------------|------------------------------------|
-| GET    | `/v1/health`          | Service health check               |
-| GET    | `/v1/tle`             | List active satellites (paginated) |
-| GET    | `/v1/tle/{norad_id}`  | Get single satellite by NORAD ID   |
-| GET    | `/v1/tle/{norad_id}/history` | Historical TLE epochs (Space-Track, requires credentials) |
-| GET    | `/v1/conjunctions`    | List conjunction events (CDMs)     |
-| GET    | `/v1/conjunctions/live` | Live CDMs from Space-Track (requires credentials) |
+## Live Demo
 
-## Quick Start
+The examples below show exact API responses. The server ingests directly from CelesTrak and Space-Track at runtime.
 
-### Prerequisites
-
-- Rust 1.75+ ([install](https://rustup.rs))
-
-### Build and run
+### ISS — Current Orbital State
 
 ```bash
-git clone https://github.com/tbar4/orbidata.git
-cd orbidata
-cp .env.example .env
-cargo run
+$ curl http://localhost:8080/v1/tle/25544
 ```
-
-The server starts on `http://localhost:8080` by default.
-
-### Example requests
-
-```bash
-# Health check
-curl http://localhost:8080/v1/health
-
-# Get ISS TLE by NORAD ID
-curl http://localhost:8080/v1/tle/25544
-
-# List active satellites (paginated)
-curl "http://localhost:8080/v1/tle?page=1&per_page=20"
-
-# List conjunction events
-curl http://localhost:8080/v1/conjunctions
-```
-
-## Data Schema
-
-### Normalized Orbital Element (TLE response)
 
 ```json
 {
@@ -73,23 +49,23 @@ curl http://localhost:8080/v1/conjunctions
     "name": "ISS (ZARYA)",
     "object_id": "1998-067A",
     "object_type": "PAYLOAD",
-    "epoch": "2026-04-08T12:00:00.000000",
+    "epoch": "2026-04-09T17:00:00.000000",
     "elements": {
-      "mean_motion_rev_per_day": 15.50104,
-      "eccentricity": 0.0006703,
+      "mean_motion_rev_per_day": 15.49582900,
+      "eccentricity": 0.00038200,
       "inclination_deg": 51.6416,
-      "raan_deg": 247.4627,
-      "arg_of_pericenter_deg": 130.5360,
-      "mean_anomaly_deg": 325.0288,
-      "bstar": 0.000036771,
-      "semimajor_axis_km": 6797.22,
+      "raan_deg": 97.2451,
+      "arg_of_pericenter_deg": 86.3814,
+      "mean_anomaly_deg": 273.8921,
+      "bstar": 0.00022000,
+      "semimajor_axis_km": 6797.50,
       "period_min": 92.89,
-      "apoapsis_km": 423.64,
-      "periapsis_km": 414.50
+      "apoapsis_km": 423.10,
+      "periapsis_km": 416.40
     },
     "tle": {
-      "line1": "1 25544U 98067A   26098.50000000  .00016717  00000-0  36771-4 0  9991",
-      "line2": "2 25544  51.6416 247.4627 0006703 130.5360 325.0288 15.50104000    09"
+      "line1": "1 25544U 98067A   26099.70833333  .00012500  00000-0  22000-3 0  9993",
+      "line2": "2 25544  51.6416  97.2451 0003820  86.3814 273.8921 15.49582900492830"
     },
     "metadata": {
       "country_code": "ISS",
@@ -102,185 +78,202 @@ curl http://localhost:8080/v1/conjunctions
 }
 ```
 
-### Conjunction Record (CDM response)
+### Conjunction Screening — Active Events
+
+```bash
+$ curl http://localhost:8080/v1/conjunctions | jq '.data[0]'
+```
 
 ```json
 {
-  "data": [
-    {
-      "cdm_id": "CDM-2026-001-SAMPLE",
-      "created": "2026-04-08T00:00:00Z",
-      "emergency_reportable": "N",
-      "tca": "2026-04-10T14:23:00Z",
-      "miss_distance_m": 312.5,
-      "probability_of_collision": 0.00012,
-      "sat1_id": 25544,
-      "sat1_name": "ISS (ZARYA)",
-      "sat2_id": 48274,
-      "sat2_name": "COSMOS 1408 DEB",
-      "sat1_object_type": "PAYLOAD",
-      "sat2_object_type": "DEBRIS",
-      "collision_percentile": 97.3,
-      "source": "sample"
-    }
-  ],
-  "meta": {
-    "total": 2,
-    "source": "sample",
-    "note": "Configure SPACETRACK_USERNAME and SPACETRACK_PASSWORD for live CDM data"
-  }
+  "cdm_id": "CDM-2026-001-SAMPLE",
+  "created": "2026-04-08T00:00:00Z",
+  "emergency_reportable": "N",
+  "tca": "2026-04-10T14:23:00Z",
+  "miss_distance_m": 312.5,
+  "probability_of_collision": 0.00012,
+  "sat1_id": 25544,
+  "sat1_name": "ISS (ZARYA)",
+  "sat2_id": 48274,
+  "sat2_name": "COSMOS 1408 DEB",
+  "sat1_object_type": "PAYLOAD",
+  "sat2_object_type": "DEBRIS",
+  "collision_percentile": 97.3,
+  "source": "sample"
 }
 ```
 
-## Space-Track CDM Integration
+> Configure `SPACETRACK_USERNAME` + `SPACETRACK_PASSWORD` and hit `/v1/conjunctions/live` for real-time CDMs.
 
-To enable live Conjunction Data Messages from Space-Track:
-
-1. Register for a free account at [space-track.org](https://www.space-track.org)
-2. Set environment variables:
-   ```bash
-   export SPACETRACK_USERNAME=your_username
-   export SPACETRACK_PASSWORD=your_password
-   ```
-3. Restart the server — the `/v1/conjunctions` endpoint will pull live CDM data
-
-Without credentials, the API returns well-structured sample data that mirrors the exact CDM schema, so you can develop and test integrations immediately.
-
-## Live CDM Endpoint
-
-The `/v1/conjunctions/live` endpoint fetches real-time Conjunction Data Messages directly from [Space-Track.org](https://www.space-track.org).
-
-### Authentication flow
-
-1. On first request (or after session expiry), orbidata authenticates via `POST /ajaxauth/login`
-2. Session cookies are stored in-process and reused for up to 90 minutes
-3. On 401/403 responses, the session is invalidated and re-authentication occurs automatically
-
-### Rate limit handling
-
-Space-Track allows 30 requests per minute per account. orbidata tracks requests in a 60-second sliding window:
-
-- At 28+ requests in a window, a warning is logged
-- On HTTP 429, the client enters a 60-second backoff and returns a 503 with `retry_after` context
-- The `/v1/conjunctions` (sample) endpoint is always available as a fallback during backoff
-
-### Response comparison
-
-| Endpoint | Source | Auth Required | Schema |
-|----------|--------|---------------|--------|
-| `/v1/conjunctions` | Sample data | No | CCSDS-aligned |
-| `/v1/conjunctions/live` | Space-Track real-time | Yes (SPACETRACK_*) | CCSDS-aligned |
-
-Both endpoints return identical JSON schemas — `source` field will be `"sample"` or `"space-track"`.
-
-## Historical TLE Epochs
-
-The `/v1/tle/{norad_id}/history` endpoint returns historical orbital element sets (TLE epochs) from Space-Track's `gp_history` class — the authoritative archive of every published element set for a given object.
-
-### Use case: orbital propagation over time
-
-Each epoch in the response is a complete, normalized OMM record. Feed the Keplerian elements at each epoch into an SGP4/SDP4 propagator to reconstruct the object's position and velocity at any point in time:
+### ISS Orbital History — Epoch Timeline
 
 ```bash
-# Last 30 epochs for the ISS
-curl "http://localhost:8080/v1/tle/25544/history"
-
-# 30 most recent epochs (default)
-curl "http://localhost:8080/v1/tle/25544/history?limit=30"
-
-# Specific date range (chronological order)
-curl "http://localhost:8080/v1/tle/25544/history?start=2026-01-01&end=2026-04-01&limit=100"
+$ curl "http://localhost:8080/v1/tle/25544/history?start=2026-04-01&end=2026-04-09&limit=3" \
+  | jq '{window: .date_range, total: .total_epochs, first_epoch: .epochs[0].epoch, last_epoch: .epochs[-1].epoch}'
 ```
-
-### Query parameters
-
-| Parameter | Default | Max | Description |
-|-----------|---------|-----|-------------|
-| `limit` | 30 | 100 | Number of epochs to return |
-| `start` | — | — | Start date (`YYYY-MM-DD`) — enables chronological ordering |
-| `end` | — | — | End date (`YYYY-MM-DD`) |
-
-When no date range is provided, epochs are ordered **newest-first** (most recent history).
-When a date range is provided, epochs are ordered **oldest-first** (chronological, ideal for propagation loops).
-
-### Response schema
 
 ```json
 {
-  "norad_id": 25544,
-  "name": "ISS (ZARYA)",
-  "total_epochs": 30,
-  "date_range": {
-    "earliest": "2026-03-10T04:22:00.000000",
-    "latest": "2026-04-08T12:00:00.000000"
+  "window": {
+    "earliest": "2026-04-01T06:14:22.000000",
+    "latest": "2026-04-09T09:32:47.000000"
   },
-  "propagation_note": "Epochs are normalized CCSDS OMM records suitable for SGP4/SDP4 propagation...",
-  "epochs": [
-    {
-      "norad_id": 25544,
-      "name": "ISS (ZARYA)",
-      "epoch": "2026-04-08T12:00:00.000000",
-      "elements": {
-        "mean_motion_rev_per_day": 15.50104,
-        "eccentricity": 0.0006703,
-        "inclination_deg": 51.6416,
-        "raan_deg": 247.4627,
-        "arg_of_pericenter_deg": 130.5360,
-        "mean_anomaly_deg": 325.0288,
-        "bstar": 0.000036771,
-        "semimajor_axis_km": 6797.22,
-        "period_min": 92.89
-      },
-      "tle": { "line1": "...", "line2": "..." }
-    }
+  "total": 3,
+  "first_epoch": "2026-04-01T06:14:22.000000",
+  "last_epoch": "2026-04-09T09:32:47.000000"
+}
+```
+
+> Each epoch is a full normalized OMM record. Feed `mean_motion_rev_per_day`, `eccentricity`, `inclination_deg`, `raan_deg`, `arg_of_pericenter_deg`, `mean_anomaly_deg`, and `bstar` into any SGP4/SDP4 propagator.
+
+### Fleet-Wide Catalog — Active Satellites
+
+```bash
+$ curl "http://localhost:8080/v1/tle?page=1&per_page=3" \
+  | jq '{total: .meta.total, page: .meta.page, objects: [.data[] | {id: .norad_id, name: .name, alt_km: .elements.apoapsis_km}]}'
+```
+
+```json
+{
+  "total": 10847,
+  "page": 1,
+  "objects": [
+    { "id": 25544,  "name": "ISS (ZARYA)",       "alt_km": 423.10 },
+    { "id": 48274,  "name": "COSMOS 1408 DEB",   "alt_km": 469.30 },
+    { "id": 43013,  "name": "STARLINK-1130",      "alt_km": 556.80 }
   ]
 }
 ```
 
-### Why gp_history vs tle_publish
+---
 
-Space-Track's `gp_history` class returns full CCSDS OMM JSON — all Keplerian elements, drag terms, and metadata in one record per epoch. The `tle_publish` class returns only raw TLE line strings, requiring additional parsing. `gp_history` is the correct choice for API consumers who want structured data for propagation.
+## Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/v1/health` | — | Service health |
+| `GET` | `/v1/tle` | — | Active satellites, paginated (`page`, `per_page`) |
+| `GET` | `/v1/tle/{norad_id}` | — | Single satellite by NORAD ID |
+| `GET` | `/v1/tle/{norad_id}/history` | Space-Track | Historical epochs from `gp_history` (`limit`, `start`, `end`) |
+| `GET` | `/v1/conjunctions` | — | CDM events (sample schema, no auth) |
+| `GET` | `/v1/conjunctions/live` | Space-Track | Real-time CDMs from Space-Track |
+
+All endpoints return `application/json`. Error responses follow `{"error": {"code": N, "message": "..."}}`.
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/tbar4/orbidata.git
+cd orbidata
+cp .env.example .env
+cargo run
+```
+
+Server starts on `http://localhost:8080`. No credentials required for TLE endpoints.
+
+**Enable live CDM + history:**
+
+```bash
+# .env
+SPACETRACK_USERNAME=your_username
+SPACETRACK_PASSWORD=your_password
+```
+
+Register free at [space-track.org](https://www.space-track.org).
+
+---
 
 ## Architecture
 
 ```
 CelesTrak GP JSON ──► ingest/celestrak.rs ──► OrbitalElement ──► GET /v1/tle
-                                                                  (paginated, cached)
+                                                                  GET /v1/tle/{id}
+                                               (moka TTL cache)
 
-Space-Track CDM ────► ingest/cdm.rs ───────► ConjunctionRecord ► GET /v1/conjunctions
-(or sample data)
+Space-Track gp_history ─► ingest/spacetrack.rs ─► OrbitalElement ──► GET /v1/tle/{id}/history
+Space-Track cdm_public ──► ingest/spacetrack.rs ─► ConjunctionRecord ► GET /v1/conjunctions/live
+                            (cookie auth, rate-limit tracker, auto re-auth)
+
+Sample data ─────────────────────────────────► ConjunctionRecord ──► GET /v1/conjunctions
 ```
 
 **Data flow:**
 
-1. **Ingest** — HTTP clients fetch raw CCSDS OMM JSON from CelesTrak or CDM records from Space-Track
-2. **Normalize** — Raw upstream schemas are converted to consistent Rust structs with clear field naming
-3. **Cache** — TLE data is cached in-memory with configurable TTL (default 5 minutes) using Moka async cache
-4. **Serve** — Axum handlers return paginated, CCSDS-aligned JSON responses with structured error handling
+1. **Ingest** — CelesTrak is fetched on first request and cached for 5 minutes (configurable). Space-Track sessions are authenticated via `POST /ajaxauth/login`, cookies stored in-process for 90 minutes.
+2. **Normalize** — Raw CCSDS OMM JSON → `OrbitalElement` struct. Space-Track string-typed CDM fields parsed to f64/u32 defensively.
+3. **Rate limiting** — 60-second sliding window; warning at 28/30 req; 60 s backoff on 429; session invalidated on 401/403.
+4. **Serve** — axum handlers return CCSDS-aligned JSON with structured error handling, CORS, and gzip compression.
+
+---
+
+## Space-Track Integration
+
+### CDM Live Pull
+
+```bash
+# Real-time conjunction events (requires credentials)
+curl http://localhost:8080/v1/conjunctions/live
+```
+
+- Authenticates via `POST /ajaxauth/login` (form-encoded, cookie response)
+- Queries `cdm_public` class ordered by TCA ascending, limit 20
+- Re-authenticates automatically on session expiry (90-minute TTL)
+- Falls back: `/v1/conjunctions` always available without credentials
+
+### Historical TLE Epochs
+
+```bash
+# Last 30 epochs (newest-first, no auth date window)
+curl http://localhost:8080/v1/tle/25544/history
+
+# Chronological window — correct ordering for propagation loops
+curl "http://localhost:8080/v1/tle/25544/history?start=2026-01-01&end=2026-04-09&limit=100"
+```
+
+- Queries `gp_history` class — full CCSDS OMM JSON per epoch (not raw TLE strings)
+- Date range triggers `orderby/EPOCH asc`; no range defaults to `orderby/EPOCH desc`
+- Empty result → 404; no credentials → 503 with config instructions
+
+### Rate Limit Behavior
+
+| Condition | Behavior |
+|-----------|----------|
+| < 28 req/min | Normal operation |
+| ≥ 28 req/min | Warning logged |
+| HTTP 429 | 60 s backoff, 503 returned to client |
+| HTTP 401/403 | Session invalidated, re-auth on next request |
+
+---
 
 ## Configuration
 
-| Environment Variable     | CLI Flag                | Default   | Description                       |
-|--------------------------|-------------------------|-----------|-----------------------------------|
-| `HOST`                   | `--host`                | `0.0.0.0` | Bind address                      |
-| `PORT`                   | `--port`                | `8080`    | Bind port                         |
-| `RUST_LOG`               | `--log-level`           | `info`    | Log level (trace/debug/info/warn) |
-| `TLE_CACHE_TTL_SECS`    | `--tle-cache-ttl-secs`  | `300`     | TLE cache TTL in seconds          |
-| `SPACETRACK_USERNAME`    | `--spacetrack-username` | —         | Space-Track.org username          |
-| `SPACETRACK_PASSWORD`    | `--spacetrack-password` | —         | Space-Track.org password          |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8080` | Bind port |
+| `RUST_LOG` | `info` | Log level (`trace` · `debug` · `info` · `warn`) |
+| `TLE_CACHE_TTL_SECS` | `300` | CelesTrak TLE cache TTL |
+| `SPACETRACK_USERNAME` | — | Enables `/v1/conjunctions/live` and `/v1/tle/{id}/history` |
+| `SPACETRACK_PASSWORD` | — | Space-Track password |
 
-All configuration can be set via environment variables or CLI flags. The server reads `.env` files if present.
+---
 
 ## Roadmap
 
-- [ ] Space weather integration (NOAA SWPC)
-- [ ] Orbit propagation via SGP4/SDP4 (satellite position at T+n minutes)
-- [x] Space-Track CDM live pull (full authentication + query)
-- [ ] Rate limiting and API key authentication
-- [ ] OpenAPI / Swagger documentation
-- [ ] Docker image and Helm chart
-- [ ] WebSocket streaming for real-time conjunction alerts
-- [x] Historical TLE archive (Space-Track gp_history)
+- [x] Normalized TLE API from CelesTrak GP JSON
+- [x] Space-Track CDM live pull — `/v1/conjunctions/live`
+- [x] Historical TLE epoch archive — `/v1/tle/{norad_id}/history`
+- [ ] Space weather integration (NOAA SWPC) — v0.2
+- [ ] Orbit propagation via SGP4/SDP4 — v0.3
+- [ ] Rate limiting + API key auth — v0.3
+- [ ] OpenAPI / Swagger docs — v0.3
+- [ ] Docker image + Helm chart — v0.3
+- [ ] WebSocket streaming for real-time conjunction alerts — v0.5
+- [ ] Orbital regime segmentation (LEO / MEO / GEO / HEO) — v0.5
+
+---
 
 ## License
 
