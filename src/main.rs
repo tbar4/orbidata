@@ -18,6 +18,19 @@ mod state;
 use config::Config;
 use state::AppState;
 
+async fn fallback_404(uri: axum::http::Uri) -> impl axum::response::IntoResponse {
+    tracing::warn!("No route matched: {}", uri);
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        axum::Json(serde_json::json!({
+            "error": {
+                "code": 404,
+                "message": format!("No route found for {}", uri)
+            }
+        })),
+    )
+}
+
 #[tokio::main]
 async fn main() {
     // Load .env file if present (silently ignored if absent)
@@ -34,7 +47,6 @@ async fn main() {
 
     let state = AppState::new(config.clone());
 
-    // Log Space-Track status so operators know what's available at startup
     if state.spacetrack.is_some() {
         tracing::info!("Space-Track integration: ENABLED (live CDM + TLE history active)");
     } else {
@@ -52,11 +64,16 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Nest TLE routes under a sub-router to avoid matchit parameter conflicts
+    // between /{norad_id} and /{norad_id}/history at the same prefix level.
+    let tle_router = Router::new()
+        .route("/", get(api::tle::list_tles))
+        .route("/{norad_id}", get(api::tle::get_tle))
+        .route("/{norad_id}/history", get(api::tle::get_tle_history));
+
     let app = Router::new()
         .route("/v1/health", get(api::health::health))
-        .route("/v1/tle", get(api::tle::list_tles))
-        .route("/v1/tle/{norad_id}", get(api::tle::get_tle))
-        .route("/v1/tle/{norad_id}/history", get(api::tle::get_tle_history))
+        .nest("/v1/tle", tle_router)
         .route(
             "/v1/conjunctions",
             get(api::conjunctions::list_conjunctions),
@@ -65,6 +82,7 @@ async fn main() {
             "/v1/conjunctions/live",
             get(api::conjunctions::list_conjunctions_live),
         )
+        .fallback(fallback_404)
         .layer(cors)
         .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())

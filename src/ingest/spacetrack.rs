@@ -429,10 +429,31 @@ impl SpaceTrackClient {
 
         match resp.status() {
             StatusCode::OK => {
-                let records: Vec<SpaceTrackTleRecord> = resp
-                    .json()
+                let body = resp
+                    .text()
                     .await
-                    .context("Failed to deserialize Space-Track tle class response")?;
+                    .context("Failed to read Space-Track tle class response body")?;
+
+                let records: Vec<SpaceTrackTleRecord> =
+                    serde_json::from_str(&body).map_err(|e| {
+                        let preview = if body.len() > 300 {
+                            &body[..300]
+                        } else {
+                            &body
+                        };
+                        tracing::error!(
+                            norad_id,
+                            "Space-Track tle class returned unexpected response (not a JSON array). \
+                             Parse error: {}. Response preview: {}",
+                            e,
+                            preview
+                        );
+                        anyhow::anyhow!(
+                            "Space-Track tle class response is not a JSON array: {}. Preview: {}",
+                            e,
+                            preview
+                        )
+                    })?;
                 info!(
                     norad_id,
                     count = records.len(),
