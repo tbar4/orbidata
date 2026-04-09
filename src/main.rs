@@ -64,16 +64,11 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Nest TLE routes under a sub-router to avoid matchit parameter conflicts
-    // between /{norad_id} and /{norad_id}/history at the same prefix level.
-    let tle_router = Router::new()
-        .route("/", get(api::tle::list_tles))
-        .route("/:norad_id", get(api::tle::get_tle))
-        .route("/:norad_id/history", get(api::tle::get_tle_history));
-
     let app = Router::new()
         .route("/v1/health", get(api::health::health))
-        .nest("/v1/tle", tle_router)
+        .route("/v1/tle", get(api::tle::list_tles))
+        .route("/v1/tle/:norad_id/history", get(api::tle::get_tle_history))
+        .route("/v1/tle/:norad_id", get(api::tle::get_tle))
         .route(
             "/v1/conjunctions",
             get(api::conjunctions::list_conjunctions),

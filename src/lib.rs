@@ -9,14 +9,11 @@ use axum::{routing::get, Router};
 use state::AppState;
 
 pub fn build_app(state: AppState) -> Router {
-    let tle_router = Router::new()
-        .route("/", get(api::tle::list_tles))
-        .route("/:norad_id", get(api::tle::get_tle))
-        .route("/:norad_id/history", get(api::tle::get_tle_history));
-
     Router::new()
         .route("/v1/health", get(api::health::health))
-        .nest("/v1/tle", tle_router)
+        .route("/v1/tle", get(api::tle::list_tles))
+        .route("/v1/tle/:norad_id/history", get(api::tle::get_tle_history))
+        .route("/v1/tle/:norad_id", get(api::tle::get_tle))
         .route(
             "/v1/conjunctions",
             get(api::conjunctions::list_conjunctions),
