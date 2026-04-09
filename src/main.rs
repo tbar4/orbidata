@@ -20,6 +20,9 @@ use state::AppState;
 
 #[tokio::main]
 async fn main() {
+    // Load .env file if present (silently ignored if absent)
+    dotenvy::dotenv().ok();
+
     let config = Config::parse();
 
     tracing_subscriber::registry()
@@ -30,6 +33,16 @@ async fn main() {
         .init();
 
     let state = AppState::new(config.clone());
+
+    // Log Space-Track status so operators know what's available at startup
+    if state.spacetrack.is_some() {
+        tracing::info!("Space-Track integration: ENABLED (live CDM + TLE history active)");
+    } else {
+        tracing::warn!(
+            "Space-Track integration: DISABLED — set SPACETRACK_USERNAME and SPACETRACK_PASSWORD in .env to enable /v1/conjunctions/live and /v1/tle/{{id}}/history"
+        );
+    }
+
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
         .expect("Invalid bind address");

@@ -57,19 +57,26 @@ pub async fn get_tle(
 }
 
 /// GET /v1/tle/:norad_id/history
-/// Returns historical TLE epochs for a NORAD ID from Space-Track gp_history.
+/// Returns historical TLE epochs for a NORAD ID from Space-Track tle class.
 /// Requires SPACETRACK_USERNAME and SPACETRACK_PASSWORD.
 pub async fn get_tle_history(
     State(state): State<AppState>,
     Path(norad_id): Path<u32>,
     Query(params): Query<TleHistoryParams>,
 ) -> Result<Json<Value>, AppError> {
+    tracing::info!(norad_id, "GET /v1/tle/{}/history called", norad_id);
+
     let client = state
         .spacetrack
         .as_ref()
         .ok_or_else(|| {
+            tracing::warn!(
+                norad_id,
+                "Space-Track not configured — cannot serve TLE history for NORAD ID {}",
+                norad_id
+            );
             AppError::Unavailable(
-                "Space-Track credentials not configured. Set SPACETRACK_USERNAME and SPACETRACK_PASSWORD to enable TLE history.".to_string(),
+                "Space-Track credentials not configured. Set SPACETRACK_USERNAME and SPACETRACK_PASSWORD in .env to enable TLE history.".to_string(),
             )
         })?;
 

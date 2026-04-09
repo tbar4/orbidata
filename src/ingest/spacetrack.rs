@@ -116,6 +116,116 @@ pub struct SpaceTrackCdm {
     pub collision_percentile: Option<String>,
 }
 
+/// Raw record from Space-Track `tle` class — all numeric fields are strings.
+/// Used for historical TLE epoch queries.
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct SpaceTrackTleRecord {
+    #[serde(rename = "OBJECT_NAME")]
+    pub object_name: Option<String>,
+    #[serde(rename = "OBJECT_ID")]
+    pub object_id: Option<String>,
+    #[serde(rename = "NORAD_CAT_ID")]
+    pub norad_cat_id: Option<String>,
+    #[serde(rename = "OBJECT_TYPE")]
+    pub object_type: Option<String>,
+    #[serde(rename = "EPOCH")]
+    pub epoch: Option<String>,
+    #[serde(rename = "MEAN_MOTION")]
+    pub mean_motion: Option<String>,
+    #[serde(rename = "ECCENTRICITY")]
+    pub eccentricity: Option<String>,
+    #[serde(rename = "INCLINATION")]
+    pub inclination: Option<String>,
+    #[serde(rename = "RA_OF_ASC_NODE")]
+    pub ra_of_asc_node: Option<String>,
+    #[serde(rename = "ARG_OF_PERICENTER")]
+    pub arg_of_pericenter: Option<String>,
+    #[serde(rename = "MEAN_ANOMALY")]
+    pub mean_anomaly: Option<String>,
+    #[serde(rename = "BSTAR")]
+    pub bstar: Option<String>,
+    #[serde(rename = "MEAN_MOTION_DOT")]
+    pub mean_motion_dot: Option<String>,
+    #[serde(rename = "MEAN_MOTION_DDOT")]
+    pub mean_motion_ddot: Option<String>,
+    #[serde(rename = "PERIOD")]
+    pub period: Option<String>,
+    #[serde(rename = "APOAPSIS")]
+    pub apoapsis: Option<String>,
+    #[serde(rename = "PERIAPSIS")]
+    pub periapsis: Option<String>,
+    #[serde(rename = "COUNTRY_CODE")]
+    pub country_code: Option<String>,
+    #[serde(rename = "LAUNCH_DATE")]
+    pub launch_date: Option<String>,
+    #[serde(rename = "SITE")]
+    pub site: Option<String>,
+    #[serde(rename = "RCS_SIZE")]
+    pub rcs_size: Option<String>,
+    #[serde(rename = "TLE_LINE1")]
+    pub tle_line1: Option<String>,
+    #[serde(rename = "TLE_LINE2")]
+    pub tle_line2: Option<String>,
+}
+
+fn parse_f64(s: Option<String>) -> f64 {
+    s.and_then(|v| v.trim().parse::<f64>().ok()).unwrap_or(0.0)
+}
+
+fn parse_opt_f64(s: Option<String>) -> Option<f64> {
+    s.and_then(|v| v.trim().parse::<f64>().ok())
+}
+
+fn parse_u32(s: Option<String>) -> u32 {
+    s.and_then(|v| v.trim().parse::<u32>().ok()).unwrap_or(0)
+}
+
+impl From<SpaceTrackTleRecord> for crate::models::orbital_element::OrbitalElement {
+    fn from(r: SpaceTrackTleRecord) -> Self {
+        use crate::models::orbital_element::{
+            KeplerianElements, OrbitalElement, SatelliteMetadata, TleLines,
+        };
+
+        let tle = match (r.tle_line1, r.tle_line2) {
+            (Some(l1), Some(l2)) => Some(TleLines {
+                line1: l1,
+                line2: l2,
+            }),
+            _ => None,
+        };
+
+        OrbitalElement {
+            norad_id: parse_u32(r.norad_cat_id),
+            name: r.object_name.unwrap_or_default(),
+            object_id: r.object_id,
+            object_type: r.object_type,
+            epoch: r.epoch.unwrap_or_default(),
+            elements: KeplerianElements {
+                mean_motion_rev_per_day: parse_f64(r.mean_motion),
+                eccentricity: parse_f64(r.eccentricity),
+                inclination_deg: parse_f64(r.inclination),
+                raan_deg: parse_f64(r.ra_of_asc_node),
+                arg_of_pericenter_deg: parse_f64(r.arg_of_pericenter),
+                mean_anomaly_deg: parse_f64(r.mean_anomaly),
+                bstar: parse_f64(r.bstar),
+                semimajor_axis_km: None,
+                period_min: parse_opt_f64(r.period),
+                apoapsis_km: parse_opt_f64(r.apoapsis),
+                periapsis_km: parse_opt_f64(r.periapsis),
+            },
+            tle,
+            metadata: SatelliteMetadata {
+                country_code: r.country_code,
+                launch_date: r.launch_date,
+                decay_date: None,
+                rcs_size: r.rcs_size,
+                site: r.site,
+            },
+        }
+    }
+}
+
 pub struct SpaceTrackClient {
     pub http: Client,
     pub username: String,
@@ -249,7 +359,7 @@ impl SpaceTrackClient {
         }
     }
 
-    /// Fetch historical TLE epochs from gp_history for a given NORAD ID.
+    /// Fetch historical TLE epochs from the Space-Track `tle` class for a given NORAD ID.
     /// If start/end dates are provided (YYYY-MM-DD), filters to that range.
     /// Otherwise returns the most recent `limit` epochs ordered newest-first.
     pub async fn fetch_tle_history(
@@ -258,7 +368,7 @@ impl SpaceTrackClient {
         limit: u32,
         start: Option<&str>,
         end: Option<&str>,
-    ) -> Result<Vec<crate::models::orbital_element::CelesTrakGp>, anyhow::Error> {
+    ) -> Result<Vec<SpaceTrackTleRecord>, anyhow::Error> {
         // Check backoff
         {
             let session = self.session.read().await;
@@ -296,18 +406,18 @@ impl SpaceTrackClient {
 
         let url = match (start, end) {
             (Some(s), Some(e)) => format!(
-                "{}/basicspacedata/query/class/gp_history/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH asc/limit/{}/format/json",
+                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH asc/limit/{}/format/json",
                 BASE_URL, norad_id, s, e, limit
             ),
             _ => format!(
-                "{}/basicspacedata/query/class/gp_history/NORAD_CAT_ID/{}/orderby/EPOCH desc/limit/{}/format/json",
+                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/orderby/EPOCH desc/limit/{}/format/json",
                 BASE_URL, norad_id, limit
             ),
         };
 
         info!(
             norad_id,
-            limit, "Fetching TLE history from Space-Track gp_history"
+            limit, "Fetching TLE history from Space-Track tle class"
         );
 
         let resp = self
@@ -315,18 +425,18 @@ impl SpaceTrackClient {
             .get(&url)
             .send()
             .await
-            .context("Space-Track gp_history request failed")?;
+            .context("Space-Track tle history request failed")?;
 
         match resp.status() {
             StatusCode::OK => {
-                let records: Vec<crate::models::orbital_element::CelesTrakGp> =
-                    resp.json()
-                        .await
-                        .context("Failed to deserialize Space-Track gp_history response")?;
+                let records: Vec<SpaceTrackTleRecord> = resp
+                    .json()
+                    .await
+                    .context("Failed to deserialize Space-Track tle class response")?;
                 info!(
                     norad_id,
                     count = records.len(),
-                    "Space-Track gp_history fetch complete"
+                    "Space-Track tle history fetch complete"
                 );
                 Ok(records)
             }
@@ -347,7 +457,7 @@ impl SpaceTrackClient {
                 ))
             }
             status => Err(anyhow!(
-                "Space-Track gp_history returned unexpected status: {}",
+                "Space-Track tle class returned unexpected status: {}",
                 status
             )),
         }
