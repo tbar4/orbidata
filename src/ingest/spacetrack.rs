@@ -8,7 +8,7 @@ use tracing::{info, warn};
 
 const BASE_URL: &str = "https://www.space-track.org";
 const CDM_QUERY: &str =
-    "/basicspacedata/query/class/cdm_public/orderby/TCA asc/limit/20/format/json";
+    "/basicspacedata/query/class/cdm_public/orderby/TCA%20asc/limit/20/format/json";
 
 /// Tracks rate-limit state. Space-Track allows 30 req/min per account.
 #[derive(Debug, Default)]
@@ -416,15 +416,16 @@ impl SpaceTrackClient {
 
         let url = match (start, end) {
             (Some(s), Some(e)) => format!(
-                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH asc/limit/{}/format/json",
+                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/EPOCH/{}--{}/orderby/EPOCH%20asc/limit/{}/format/json",
                 self.base_url, norad_id, s, e, limit
             ),
             _ => format!(
-                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/orderby/EPOCH desc/limit/{}/format/json",
+                "{}/basicspacedata/query/class/tle/NORAD_CAT_ID/{}/orderby/EPOCH%20desc/limit/{}/format/json",
                 self.base_url, norad_id, limit
             ),
         };
 
+        tracing::debug!(url = %url, "Space-Track TLE history request URL");
         info!(
             norad_id,
             limit, "Fetching TLE history from Space-Track tle class"
